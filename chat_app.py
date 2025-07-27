@@ -42,23 +42,20 @@ with col1:
         lat, lon = location.latitude, location.longitude
         tz = get_tz(lon, lat)
         tz_fordatetime = pytz.timezone(get_tz(lon, lat))
-        st.session_state.likely_us = "United States" in location.address
+        st.session_state.location = location.address
 with col2:
-    if day_or_week := st.pills("Hear about weather for", ["A specific day", "This week"], default="A specific day") == "A specific day":
-        forecast_type = "day"
-    else:
-        forecast_type="week" 
-        st.session_state.start_date = datetime.now(tz=tz_fordatetime).strftime('%Y-%m-%d')
-        st.markdown(st.session_state.start_date)
-        st.session_state.end_date = (datetime.now(tz=tz_fordatetime)+timedelta(days=7)).strftime('%Y-%m-%d')
+    units = st.pills("Temperature in:", ["Fahrenheit", "Celsius"], default="Fahrenheit")
 with col3:
-    if forecast_type == "day":
-        forecast_date = st.date_input("What day's weather are you interested in?", min_value=datetime.now(tz=tz_fordatetime), max_value=datetime.now(tz=tz_fordatetime)+timedelta(days=14))
-        st.session_state.start_date = forecast_date.strftime('%Y-%m-%d')
+    forecast_date = st.date_input("Date", max_value=datetime.now(tz=tz_fordatetime)+timedelta(days=14))
+    selected_date = forecast_date.strftime('%Y-%m-%d')
 
 if st.button("Tell me about the weather"):
-    forecast = helpers.openmeteo_getforecast(lat, lon, tz, st.session_state.start_date, st.session_state.end_date)
-    st.dataframe(forecast['daily'])
+    #try:
+        forecast = helpers.openmeteo_getforecast(lat, lon, tz, units, selected_date)
+        forecast_text = helpers.forecast_to_text(forecast, selected_date, units)
+        st.markdown(forecast_text)
+    #except Exception as e:
+    #    st.markdown("Issue retrieving Openmeteo data")
     #msg = {"role":"system", "content":"Tell me about the weather"}
     #st.session_state.messages = [msg]
         
