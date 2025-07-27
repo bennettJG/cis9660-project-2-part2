@@ -58,7 +58,7 @@ with col3:
 
 if st.button("Tell me about the weather"):
     forecast = helpers.openmeteo_getforecast(lat, lon, tz, st.session_state.start_date, st.session_state.end_date)
-    st.markdown(forecast)
+    st.dataframe(forecast['daily'])
     #msg = {"role":"system", "content":"Tell me about the weather"}
     #st.session_state.messages = [msg]
         
