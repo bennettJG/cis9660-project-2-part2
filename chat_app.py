@@ -85,7 +85,7 @@ def get_story():
             st.session_state.forecast_text = helpers.openmeteo_getforecast(location, units, selected_date)
             st.session_state.sys_prompt = f"You will be given a description of a location and its weather conditions at a specific date and time. Based on this information, write a short story about a character in this location. Describe how the weather makes the character feel, what they choose to do with their day, and why they chose that activity. {st.session_state.forecast_text}. Make sure that your story is consistent with the information provided. For example, if the weather described is rainy and cold, do not describe a sunny day."
             st.session_state.messages = [{'role':'system', 'content':st.session_state.sys_prompt}]
-            st.sys_temp = 1
+            st.sys_temp = .9
             st.session_state.chat_enabled = True
         except Exception as e:
             st.session_state.sys_prompt = 'Explain to the user that the API used to collect weather information cannot currently be reached.'
@@ -137,5 +137,5 @@ if st.button("Reset"):
     chat_input_area.empty()
 
 if(st.session_state.forecast_text!=""):
-    st.markdown(":warning: Generative AI outputs can be inaccurate. Verify output against the data from OpenMeteo API:")
+    st.markdown(":warning: **Generative AI outputs can be inaccurate. Verify output against the data from OpenMeteo API:**")
     st.markdown(st.session_state.forecast_text)
