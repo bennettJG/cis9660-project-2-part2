@@ -49,7 +49,31 @@ def openmeteo_getaqi():
     }
     aqi_response = openmeteo.weather_api(aqi_api, params=aqi_params)[0]
 
-def openmeteo_getforecast(lat, lon, tz, units, selected_date):
+def forecast_to_text(forecast_dict, selected_date, units, location):
+    match forecast_dict['when']:
+        case "past":
+            verb = "was"
+            verb2 = "were"
+        case "present":
+            verb = "is"
+            verb2 = "are"
+        case "future":
+            verb = "will be"
+            verb2 = "will be"
+    text = f"Weather for {location} on {datetime.strftime(datetime.strptime(selected_date, '%Y-%m-%d').astimezone(forecast_dict['tz']), '%A, %B %d, %Y')}:"        
+    if 'current' in forecast_dict and forecast_dict['when'] == "present":
+        current = forecast_dict['current']
+        text += f"\n\nThat's today! It is currently {'daytime' if current['is_day'] else 'nighttime'}. Right now, the weather is {weather_codes[current['weather_code']].lower()}. The temperature is {round(current['temperature_2m'])} {units} (feels like {round(current['apparent_temperature'])} {units}). The wind speed is {round(current['wind_speed_10m'])} {'miles per hour' if units=='Fahrenheit' else 'kilometers per hour'}. The humidity is {round(current['relative_humidity_2m'])} percent."
+    daily = forecast_dict['daily'].iloc[0]
+    
+    text += f"\n\nThe overall conditions for the day {verb2} {weather_codes[daily['weather_code']].lower()}. The high temperature {verb} {round(daily['temperature_2m_max'])} {units} (feels like {round(daily['apparent_temperature_max'])} {units}) and the low temperature {verb} {round(daily['temperature_2m_min'])} {units} (feels like {round(daily['apparent_temperature_min'])} {units}). The maximum wind speed {verb} {round(daily['wind_speed_10m_max'])} {'miles per hour' if units=='Fahrenheit' else 'kilometers per hour'}."
+
+    return text
+    
+def openmeteo_getforecast(location, units, selected_date):
+    lat, lon = location.latitude, location.longitude
+    tz = get_tz(lon, lat)
+    
     cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
     retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
     openmeteo = openmeteo_requests.Client(session = retry_session)
@@ -75,7 +99,7 @@ def openmeteo_getforecast(lat, lon, tz, units, selected_date):
         
         daily = historical_response.Daily()
         daily_response = pd.DataFrame(list(map(lambda i: daily.Variables(i).ValuesAsNumpy(), range(0, daily.VariablesLength()))), index = daily_vars).T
-        return {'daily': daily_response, 'when':'past', 'tz':tz_fordatetime}
+        return forecast_to_text({'daily': daily_response, 'when':'past', 'tz':tz_fordatetime}, selected_date, units, location)
 
     else:
         # Use forecasts API
@@ -101,24 +125,9 @@ def openmeteo_getforecast(lat, lon, tz, units, selected_date):
             when = 'past'
             if(datetime.now(tz=tz_fordatetime) < datetime.strptime(selected_date, '%Y-%m-%d').astimezone(tz_fordatetime) + timedelta(hours=23.999)):
                 when = 'present'
-
-        
+    
         current = forecast_response.Current()
         current_response = list(map(lambda i: current.Variables(i).Value(), range(0, current.VariablesLength())))
         current_response = dict(zip(current_vars, current_response))
-        return {'daily': daily_response, 'current':current_response, 'when':when, 'tz':tz_fordatetime}
+        return forecast_to_text({'daily': daily_response, 'current':current_response, 'when':when, 'tz':tz_fordatetime}, selected_date, units, location)
 
-def forecast_to_text(forecast_dict, selected_date, units):
-    match forecast_dict['when']:
-        case "past":
-            verb = "was"
-        case "present":
-            verb = "is"
-        case "future":
-            verb = "will be"
-    daily = forecast_dict['daily'].iloc[0]
-    text = f"The location {verb} {st.session_state.location}. The date {verb} {datetime.strftime(datetime.strptime(selected_date, '%Y-%m-%d').astimezone(forecast_dict['tz']), '%A, %B %d, %Y')}. The day's weather {verb} {weather_codes[daily['weather_code']]}. The high temperature {verb} {round(daily['temperature_2m_max'])} (feels like {round(daily['apparent_temperature_max'])}) and the low temperature {verb} {round(daily['temperature_2m_min'])} (feels like {round(daily['apparent_temperature_min'])}). The maximum wind speed {verb} {round(daily['wind_speed_10m_max'])} {'miles per hour' if units=='Fahrenheit' else 'kilometers per hour'}."
-    if 'current' in forecast_dict and forecast_dict['when'] == "present":
-        current = forecast_dict['current']
-        text += f"\nIt is currently {'daytime' if current['is_day'] else 'nighttime'}. Right now, the weather is {weather_codes[current['weather_code']]}. The temperature is {round(current['temperature_2m'])} (feels like {round(current['apparent_temperature'])}). The wind speed is {round(current['wind_speed_10m'])} {'miles per hour' if units=='Fahrenheit' else 'kilometers per hour'}. The humidity is {round(current['relative_humidity_2m'])} percent."
-    return text
