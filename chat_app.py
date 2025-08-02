@@ -11,11 +11,21 @@ import openmeteo_requests
 from typing import Dict, Generator
 from datetime import date, datetime, timedelta
 import openmeteo_request_helpers as helpers
+import sys
+import os
+from dotenv import load_dotenv
+from together import Together
 
 geolocator = Nominatim(user_agent="CIS 9660 Project 2 Weather App")
 cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
 retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
 openmeteo = openmeteo_requests.Client(session = retry_session)
+
+load_dotenv()
+client = Together()
+model_unavailable_responses = {'ollama': "Please check that Ollama is running and the model you've selected is available!",
+'together': "The Together API is currently not available (perhaps the token quota has been reached). Please try again later!"}
+ollama_models = [model["model"] for model in ollama.list()["models"]]
 
 st.title("How's the weather today?")
 
@@ -26,17 +36,31 @@ if 'messages' not in st.session_state:
     st.session_state.messages = [{'role':'system', 'content':st.session_state.sys_prompt}]
     st.session_state.forecast_text=""
     
-def ollama_generator(messages: Dict, temp: float) -> Generator:
-    stream = ollama.chat(
-        model="smollm2", messages=messages, stream=True, options={'temperature':temp})
-    for chunk in stream:
-        yield chunk['message']['content']
+def ollama_generator(messages: Dict, temp: float, model: str) -> Generator:
+    try:
+        stream = ollama.chat(
+            model=model, messages=messages, stream=True, options={'temperature':temp})
+        for chunk in stream:
+            yield chunk['message']['content']
+    except Exception as e:
+        yield model_unavailable_responses['ollama']
+        
+def together_generator(messages: Dict, temp: float) -> Generator:
+    try:
+        stream = client.chat.completions.create(
+          model="meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+          messages=messages, stream=True, options={'temperature':temp}
+        )
+        for chunk in stream:
+            yield(chunk.choices[0].delta.content)
+    except Exception as e:
+        yield model_unavailable_responses['together']
            
 st.set_page_config(page_title="How's the weather today?", layout="wide", page_icon="☀️")
 
 tz=None
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     location_input = st.text_input("Location (City or address)", value="NYC")
@@ -55,8 +79,11 @@ with col2:
 with col3:
     forecast_date = st.date_input("Date", max_value=datetime.now()+timedelta(days=14))
     selected_date = forecast_date.strftime('%Y-%m-%d')
+with col4:
+    st.session_state["model"] = st.selectbox("Choose your model", ollama_models)
     
 def get_clothing_recs():
+    reset_chat()
     try:
        if location:
            pass
@@ -65,7 +92,6 @@ def get_clothing_recs():
            st.session_state.sys_prompt = f'Suggest appropriate clothing and accessories for the following weather. When making suggestions, consider whether the clothing would be comfortable given the predicted high and low temperatures and the weather conditions. If the date given is in the past, discuss what would have been good to wear and bring when spending time outside. Keep the response brief but informative, paying attention to whether the weather is hot, cold, or in between. Do not recommend scarves, jackets, or multiple layers if the weather is hot, and do not recommend lightweight clothing if it is cold. {st.session_state.forecast_text} What are your clothing suggestions?'
            st.session_state.messages = [{'role':'system', 'content':st.session_state.sys_prompt}]
            st.session_state.sys_temp = 0.5
-           st.session_state.chat_enabled = True
        except Exception as e:
            st.session_state.sys_prompt = 'Explain to the user that the API used to collect weather information cannot currently be reached.'
            st.session_state.sys_temp = 0.2
@@ -74,10 +100,13 @@ def get_clothing_recs():
        st.session_state.sys_temp = 0.2   
     with chat_area.container():
         with st.chat_message("assistant"):  
-            response = st.write_stream(ollama_generator([{'role':'system', 'content': st.session_state.sys_prompt}], st.session_state.sys_temp))
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            response = st.write_stream(ollama_generator([{'role':'system', 'content': st.session_state.sys_prompt}], st.session_state.sys_temp, st.session_state.model))
+            if (not (response in model_unavailable_responses.values())):
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                st.session_state.chat_enabled = True
             
 def get_story():
+    reset_chat()
     try:
         if location:
             pass
@@ -95,8 +124,10 @@ def get_story():
         st.session_state.sys_temp = 0.2   
     with chat_area.container():
         with st.chat_message("assistant"):  
-            response = st.write_stream(ollama_generator([{'role':'system', 'content': st.session_state.sys_prompt}], st.session_state.sys_temp))
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            response = st.write_stream(ollama_generator([{'role':'system', 'content': st.session_state.sys_prompt}], st.session_state.sys_temp, st.session_state.model))
+            if (not (response in model_unavailable_responses.values())):
+                st.session_state.chat_enabled = True
+                st.session_state.messages.append({"role": "assistant", "content": response})
 
 col4, col5, col6, col7 = st.columns(4)
 with col4:
@@ -125,17 +156,20 @@ with container2:
                 with st.chat_message("user"):
                     st.markdown(prompt)
                 with st.chat_message("assistant"):  
-                    response = st.write_stream(ollama_generator(st.session_state.messages, st.session_state.sys_temp))
+                    response = st.write_stream(ollama_generator(st.session_state.messages, st.session_state.sys_temp, st.session_state.model))
                     st.session_state.messages.append({"role": "assistant", "content": response})
-st.markdown("---")
-if st.button("Reset"):
+def reset_chat():
     st.session_state.sys_prompt = 'You are a weather assistant designed to help users explore past, current, and forecasted weather conditions around the world. If the user asks a question unrelated to the weather or location you have been told about, redirect them by suggesting they choose a new location or date for weather information. If they ask a follow-up question about the weather, use the forecast you have already been provided to answer. If they ask for a different forecast, explain that they need to use the controls at the top of the page to select a location and date.'
     st.session_state.messages = [{'role':'system', 'content':st.session_state.sys_prompt}]
     st.session_state.forecast_text = ""
     st.session_state.chat_enabled = False
     chat_area.empty()
     chat_input_area.empty()
+    
+st.markdown("---")
+if st.button("Reset"):
+    reset_chat()
 
-if(st.session_state.forecast_text!=""):
-    st.markdown(":warning: **Generative AI outputs can be inaccurate. Verify output against the data from OpenMeteo API:**")
+if((st.session_state.forecast_text!="") & st.session_state.chat_enabled):
+    st.markdown(":warning: **Generative AI outputs can be inaccurate. Verify output against the data from Openmeteo API:**")
     st.markdown(st.session_state.forecast_text)

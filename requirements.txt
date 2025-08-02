@@ -10,4 +10,7 @@ geopy
 openmeteo_requests
 typing
 datetime
-openmeteo_request_helpers
+together
+python-dotenv
+os
+sys
