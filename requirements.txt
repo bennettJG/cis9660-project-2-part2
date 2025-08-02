@@ -1,0 +1,13 @@
+streamlit
+numpy
+pandas
+requests_cache
+retry_requests
+tzfpy
+ollama
+pytz
+geopy
+openmeteo_requests
+typing
+datetime
+openmeteo_request_helpers
