@@ -4,3 +4,4 @@ ENV/
 .env
 __pycache__/
 .cache.sqlite
+README.md

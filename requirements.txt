@@ -12,5 +12,3 @@ typing
 datetime
 together
 python-dotenv
-os
-sys

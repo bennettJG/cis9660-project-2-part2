@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import pytz
 from tzfpy import get_tz
 
+# Dictionary for meanings of weather codes returned by Openmeteo API
+# (https://open-meteo.com/en/docs#weather_variable_documentation)
 weather_codes = {
     0: 'Clear sky',
     1: 'Mainly clear',
@@ -39,6 +41,7 @@ weather_codes = {
     99: 'Thunderstorm with heavy hail'
 }
 
+# Air quality index API, not currently used but could be incorporated later if needed
 def openmeteo_getaqi():
     aqi_api = "https://air-quality-api.open-meteo.com/v1/air-quality"
     aqi_params = {
@@ -49,7 +52,9 @@ def openmeteo_getaqi():
     }
     aqi_response = openmeteo.weather_api(aqi_api, params=aqi_params)[0]
 
+# Convert numeric values from API into something more legible for both the user and the model.
 def forecast_to_text(forecast_dict, selected_date, units, location):
+    # Match tense to the date input -- "was" if it's in the past, "is" if it's today, "will be" if it's in the future
     match forecast_dict['when']:
         case "past":
             verb = "was"
@@ -70,6 +75,8 @@ def forecast_to_text(forecast_dict, selected_date, units, location):
 
     return text
     
+# Openmeteo API caller
+# Input variables: Geocoded location (obtained from geocoder, has latitude and longitude properties), temperature units (Fahrenheit, Celsius), date in YYYY-MM-DD format
 def openmeteo_getforecast(location, units, selected_date):
     lat, lon = location.latitude, location.longitude
     tz = get_tz(lon, lat)
@@ -78,12 +85,12 @@ def openmeteo_getforecast(location, units, selected_date):
     retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
     openmeteo = openmeteo_requests.Client(session = retry_session)
     tz_fordatetime = pytz.timezone(get_tz(lon, lat))
-    
+
     daily_vars = ["weather_code", "temperature_2m_max", "temperature_2m_min", "apparent_temperature_max", "apparent_temperature_min", "wind_speed_10m_max"]
     current_vars = ["weather_code", "temperature_2m", "apparent_temperature",  "wind_speed_10m", "is_day", "relative_humidity_2m"]
     
     if datetime.now(tz=tz_fordatetime)-datetime.strptime(selected_date, '%Y-%m-%d').astimezone(tz_fordatetime) >= timedelta(days=3):
-        # Use historical data API rather than forecasts
+        # If date is more than a couple days in the past, need to use the historical data API rather than forecasts
         historical_api = "https://archive-api.open-meteo.com/v1/archive"
         historical_params = {
             "latitude": lat,
@@ -120,6 +127,7 @@ def openmeteo_getforecast(location, units, selected_date):
         daily = forecast_response.Daily()
         daily_response = pd.DataFrame(list(map(lambda i: daily.Variables(i).ValuesAsNumpy(), range(0, daily.VariablesLength()))), index = daily_vars).T
         
+        # Figure out when the date is relative to now, so that the text can refer to it properly
         when = 'future'
         if (datetime.now(tz=tz_fordatetime) > datetime.strptime(selected_date, '%Y-%m-%d').astimezone(tz_fordatetime)):
             when = 'past'
